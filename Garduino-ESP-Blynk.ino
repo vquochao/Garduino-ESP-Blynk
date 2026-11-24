@@ -18,9 +18,16 @@
 //#define BLYNK_DEBUG
 #define BLYNK_PRINT Serial
 
+#if defined(ESP32)
+  #include <WiFi.h>
+  #include <BlynkSimpleEsp32.h>
+#elif defined(ESP8266)
+  #include <ESP8266WiFi.h>
+  #include <BlynkSimpleEsp8266.h>
+#else
+  #error "This sketch supports ESP8266 and ESP32 boards only"
+#endif
 #include <ArduinoOTA.h>
-#include <ESP8266WiFi.h>
-#include <BlynkSimpleEsp8266.h>
 #include <TimeLib.h>
 #include <WidgetRTC.h>
 

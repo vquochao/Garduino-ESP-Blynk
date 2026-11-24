@@ -33,14 +33,14 @@
 /*
    Hardware Pins
 */
-#define TAP                       14 // D5
+#define TAP                       14 // GPIO14 (D5 on NodeMCU/WeMos, GPIO14 on ESP32)
 #define TAP_ACTIVE                LOW   // relay level that opens the valve (LOW = active-low relay)
 #define TAP_INACTIVE              (!TAP_ACTIVE)
 /*
    Flow Meter Pin and Calibration factor
    (YF-S201: pulse frequency [Hz] = 4.5 * flow [L/min])
 */
-#define FLOW_SENSOR               4  // D2
+#define FLOW_SENSOR               4  // GPIO4  (D2 on NodeMCU/WeMos, GPIO4 on ESP32)
 #define FLOW_CALIBRATION          4.5
 /*
    Water Cost. Comment out to disable.

@@ -6,6 +6,19 @@
 #ifndef IRAM_ATTR
 #define IRAM_ATTR ICACHE_RAM_ATTR
 #endif
+#if defined(ESP32)
+// ESP32 is dual core: noInterrupts() is not enough, use a spinlock
+portMUX_TYPE pulseMux = portMUX_INITIALIZER_UNLOCKED;
+#define PULSE_LOCK()        portENTER_CRITICAL(&pulseMux)
+#define PULSE_UNLOCK()      portEXIT_CRITICAL(&pulseMux)
+#define PULSE_LOCK_ISR()    portENTER_CRITICAL_ISR(&pulseMux)
+#define PULSE_UNLOCK_ISR()  portEXIT_CRITICAL_ISR(&pulseMux)
+#else
+#define PULSE_LOCK()        noInterrupts()
+#define PULSE_UNLOCK()      interrupts()
+#define PULSE_LOCK_ISR()
+#define PULSE_UNLOCK_ISR()
+#endif
 /*
   getCurrentTime() -
       - return the time as 'HH:MM:SS'
@@ -77,10 +90,12 @@ void cancelTimer(int &id) {
 /*
    pulseCounter() -
       - attached to an interrupt counting the pulses from the sensor
-      - must live in IRAM on the ESP8266, otherwise it crashes ("ISR not in IRAM!")
+      - must live in IRAM on ESP8266/ESP32, otherwise it crashes ("ISR not in IRAM!")
 */
 void IRAM_ATTR pulseCounter() {
+  PULSE_LOCK_ISR();
   pulseCount++;
+  PULSE_UNLOCK_ISR();
 }
 /*
    flowSensor() -
@@ -90,10 +105,10 @@ void IRAM_ATTR pulseCounter() {
       - updates Blynk only when something changed (less traffic)
 */
 void flowSensor() {
-  noInterrupts();
+  PULSE_LOCK();
   uint32_t pulses = pulseCount;
   pulseCount = 0;
-  interrupts();
+  PULSE_UNLOCK();
 
   unsigned long now = millis();
   unsigned long elapsed = now - lastFlowCheck;

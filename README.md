@@ -6,7 +6,7 @@ This is still a work in progress. I'll write up a readme later on but feel free 
 Hardware: 
 
 * 3.3V or 5V Relay Module (HIGH or LOW active)
-* ESP8266-Dev (WeMos/NodeMCU style)
+* ESP8266-Dev (WeMos/NodeMCU style) or ESP32 dev board (pins are GPIO numbers: TAP = GPIO14, flow sensor = GPIO4)
 * Liquid Flow Meter (I used model YF-S201) 
 * 12VDC Solenoid water valves
 

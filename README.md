@@ -12,6 +12,10 @@ Hardware:
 
 Software:
 
+* Runs on a **local legacy Blynk server** (blynk-server) with the legacy **Blynk library 0.6.1** and the legacy Blynk app.
+  It is not compatible with the new paid Blynk IoT cloud / library 1.x (WidgetRTC, Table and terminal labels were removed there).
+  Set `LOCAL_SERVER` (server IP) and `LOCAL_PORT` (hardware port, 8080 by default) in `settings_base.h`.
+
 * Download this project as a zip and extract to your project directory in its own folder.
 * Match the pinouts from the code (settings_base.h). 
 * Download the Blynk mobile app and create a project. Open the email send to you with the auth code and put it in settings_base.h (or, better, `#define AUTH "..."` in wifi_credentials.h so the token is not committed).

@@ -22,9 +22,13 @@
 */
 #define OTA_HOSTNAME              "GARDUINO-BASE"
 /*
-   Local Server Settings (comment out to use the Blynk cloud)
+   Local Blynk Server (legacy blynk-server, Blynk library 0.6.1)
+   - LOCAL_PORT: hardware port of the server (8080 = default plain TCP port of blynk-server).
+     Without it the library would use port 80 and fail to connect.
+   - Commenting LOCAL_SERVER out connects to the old blynk-cloud.com, which has been shut down.
 */
 #define LOCAL_SERVER              IPAddress(192, 168, 1, 2)
+#define LOCAL_PORT                8080
 /*
    Console Output (Debug/Log)
 */

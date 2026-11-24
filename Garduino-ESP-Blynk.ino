@@ -69,7 +69,9 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR), pulseCounter, FALLING);
   // CONNECT TO BLYNK (Blynk.begin blocks until connected; sync is done in BLYNK_CONNECTED)
   WiFi.mode(WIFI_STA);
-#ifdef LOCAL_SERVER
+#if defined(LOCAL_SERVER) && defined(LOCAL_PORT)
+  Blynk.begin(AUTH, WIFI_SSID, WIFI_PASS, LOCAL_SERVER, LOCAL_PORT);
+#elif defined(LOCAL_SERVER)
   Blynk.begin(AUTH, WIFI_SSID, WIFI_PASS, LOCAL_SERVER);
 #else
   Blynk.begin(AUTH, WIFI_SSID, WIFI_PASS);

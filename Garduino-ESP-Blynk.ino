@@ -30,60 +30,62 @@
 #include "blynk_writes.h"
 
 /*
+   Status line + monthly reset (every second)
+*/
+void statusTask() {
+  long rssi = WiFi.RSSI();
+  Blynk.setProperty(vPIN_TERMINAL, "label",
+                    String("WIFI: ") + constrain(map(rssi, -105, -40, 0, 100), 0, 100) +
+                    "% (" + rssi + "dB) | " + curDateTime());
+  if (timeStatus() != timeNotSet && year() > 2000 && month() != month_old) {
+    waterCost_month = 0;
+    totalMilliLitres_month = 0;
+    month_old = month();
+    Blynk.virtualWrite(vPIN_LAST_MONTH, month_old);
+    Blynk.virtualWrite(vPIN_WATER_TOTAL_MONTH, 0);
+    Blynk.virtualWrite(vPIN_WATER_COST_MONTH, 0);
+    addTableRow("RESET MONTHLY DATA", " ");
+  }
+}
+/*
    SETUP
 */
 void setup() {
-  // PINMODES
-  pinMode(TAP, OUTPUT);
-  digitalWrite(TAP, HIGH);
-  // FLOW METER
-  pulseCount        = 0;
-  flowRate          = 0.0;
-  flowMilliLitres   = 0;
-  totalMilliLitres  = 0;
-  attachInterrupt(FLOW_SENSOR, pulseCounter, FALLING);
   // COMMUNICATIONS
   Serial.begin(115200);
+  // PINMODES
+  digitalWrite(TAP, TAP_INACTIVE);   // set level before enabling output -> no relay glitch at boot
+  pinMode(TAP, OUTPUT);
+  // FLOW METER
+  pinMode(FLOW_SENSOR, INPUT_PULLUP);
+  lastFlowCheck = millis();
+  attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR), pulseCounter, FALLING);
+  // CONNECT TO BLYNK (Blynk.begin blocks until connected; sync is done in BLYNK_CONNECTED)
   WiFi.mode(WIFI_STA);
-  // CONNECT TO BLYNK
 #ifdef LOCAL_SERVER
   Blynk.begin(AUTH, WIFI_SSID, WIFI_PASS, LOCAL_SERVER);
 #else
   Blynk.begin(AUTH, WIFI_SSID, WIFI_PASS);
 #endif
-  while (Blynk.connect() == false) {}
-  Blynk.syncVirtual(vPIN_LIMITMENU, vPIN_WATER_COST_MONTH, vPIN_WATER_TOTAL_MONTH, vPIN_LAST_MONTH);
   // OVER THE AIR UPDATES
   ArduinoOTA.setHostname(OTA_HOSTNAME);
   ArduinoOTA.begin();
-  // RTC
-  rtc.begin();
+  // RTC: sync fast until the first valid time, then every 5 minutes
   setSyncInterval(5);
   // TIMERS
-  timer.setInterval(1000, flowSensor);
-  timer.setInterval(1000, []() {
-    Blynk.setProperty(vPIN_TERMINAL, "label", String("WIFI: ") + String(map(WiFi.RSSI(), -105, -40, 0, 100)) + String("% (") + WiFi.RSSI() + String("dB)") + String(" | ") + curDateTime() );
-    if (month() != month_old && year() != 1970) {
-      waterCost_month = 0;
-      totalMilliLitres_month = 0;
-      month_old = month();
-      Blynk.virtualWrite(vPIN_LAST_MONTH, month());
-      Blynk.virtualWrite(vPIN_TABLE, "add", rowIndex, "RESET MONTHLY DATA", " ");
-      rowIndex++;
-    }
-  });
-  timer2 = timer.setInterval(1000, []() {
-    if (year() != 1970) {
+  timer.setInterval(1000L, flowSensor);
+  timer.setInterval(1000L, statusTask);
+  rtcSyncTimer = timer.setInterval(1000L, []() {
+    if (timeStatus() != timeNotSet && year() > 2000) {
       setSyncInterval(300);
       printTask("RTC SYNC", "5 MIN");
-      timer.disable(timer2);
+      cancelTimer(rtcSyncTimer);
     }
   });
   // DONE
   Serial.println(F("Blynk v" BLYNK_VERSION ": Device started"));
   terminal.println(F("Blynk v" BLYNK_VERSION ": Device started"));
   terminal.flush();
-  //Blynk.virtualWrite(vPIN_TABLE, "clr");
 }
 /*
    LOOP
@@ -93,6 +95,3 @@ void loop() {
   ArduinoOTA.handle();
   timer.run();
 }
-/*
-
-*/

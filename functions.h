@@ -63,9 +63,12 @@ void printTask(const String &a, const String &b) {
 }
 /*
    addTableRow() - add a row to the table widget with a unique index
+      - the counter is saved on the server (vPIN_ROW_INDEX) so it survives reboots,
+        otherwise new rows would overwrite old ones starting from index 0
 */
 void addTableRow(const String &name, const String &value) {
   Blynk.virtualWrite(vPIN_TABLE, "add", rowIndex++, name, value);
+  Blynk.virtualWrite(vPIN_ROW_INDEX, rowIndex);
 }
 /*
    isTapOn() - true when the valve relay is active

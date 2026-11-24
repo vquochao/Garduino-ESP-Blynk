@@ -11,7 +11,7 @@
 */
 BLYNK_CONNECTED() {
   if (firstConnect) {
-    Blynk.syncVirtual(vPIN_LIMITMENU, vPIN_WATER_COST_MONTH, vPIN_WATER_TOTAL_MONTH, vPIN_LAST_MONTH);
+    Blynk.syncVirtual(vPIN_ROW_INDEX, vPIN_LIMITMENU, vPIN_WATER_COST_MONTH, vPIN_WATER_TOTAL_MONTH, vPIN_LAST_MONTH);
     firstConnect = false;
   } else {
     Blynk.syncVirtual(vPIN_LIMITMENU);
@@ -80,6 +80,14 @@ BLYNK_WRITE(vPIN_WATER_COST_MONTH) {
 BLYNK_WRITE(vPIN_WATER_TOTAL_MONTH) {
   totalMilliLitres_month = param.asDouble() * 1000.0;
   printTask("SYNC WATER USE", String(totalMilliLitres_month / 1000.0));
+}
+/*
+  Table row counter stored on the server
+    - max() so rows added before the sync arrived are not reused
+*/
+BLYNK_WRITE(vPIN_ROW_INDEX) {
+  rowIndex = max(rowIndex, param.asInt());
+  printTask("SYNC TABLE ROW", String(rowIndex));
 }
 /*
   Last Month Widget

@@ -73,3 +73,5 @@
 #define vPIN_LIMITMENU            V9
 
 #define vPIN_LAST_MONTH           V10
+
+#define vPIN_ROW_INDEX            V30  // no widget needed: stores the table row counter on the server

@@ -3,45 +3,87 @@
                        General Functions
 
  **************************************************************/
+#ifndef IRAM_ATTR
+#define IRAM_ATTR ICACHE_RAM_ATTR
+#endif
+#if defined(ESP32)
+// ESP32 is dual core: noInterrupts() is not enough, use a spinlock
+portMUX_TYPE pulseMux = portMUX_INITIALIZER_UNLOCKED;
+#define PULSE_LOCK()        portENTER_CRITICAL(&pulseMux)
+#define PULSE_UNLOCK()      portEXIT_CRITICAL(&pulseMux)
+#define PULSE_LOCK_ISR()    portENTER_CRITICAL_ISR(&pulseMux)
+#define PULSE_UNLOCK_ISR()  portEXIT_CRITICAL_ISR(&pulseMux)
+#else
+#define PULSE_LOCK()        noInterrupts()
+#define PULSE_UNLOCK()      interrupts()
+#define PULSE_LOCK_ISR()
+#define PULSE_UNLOCK_ISR()
+#endif
 /*
   getCurrentTime() -
       - return the time as 'HH:MM:SS'
 */
 String getCurrentTime() {
-  String extraZeroH = "", extraZeroM = "", extraZeroS = "";
-  if (hour() < 10) extraZeroH = '0';
-  if (minute() < 10) extraZeroM = '0';
-  if (second() < 10) extraZeroS = '0';
-  return String(extraZeroH + hour()) + ':' + extraZeroM + minute() + ':' + extraZeroS + second();
+  char buf[9];
+  snprintf(buf, sizeof(buf), "%02d:%02d:%02d", hour(), minute(), second());
+  return String(buf);
 }
 /*
   getCurrentDate() -
-      - return the date as 'DD:MM:YY'
+      - return the date as 'D-Mon-YY'
 */
 String getCurrentDate() {
-  return String(day()) + '-' + monthShortStr(month()) + '-' + (year() - 2000);
+  char buf[12];
+  snprintf(buf, sizeof(buf), "%d-%s-%02d", day(), monthShortStr(month()), year() % 100);
+  return String(buf);
 }
 /*
   curDateTime() -
-      - return the dat & time as String 'DD:MM:YYYY HH:MM:SS'
+      - return the date & time as String 'D-Mon-YY HH:MM:SS'
 */
 String curDateTime() {
-  return getCurrentDate() + String(" ") + getCurrentTime();
+  return getCurrentDate() + ' ' + getCurrentTime();
 }
 /*
-   printTask() - usage 'printTask(String(abc));'
+   printTask() - usage 'printTask("ABC", "123");'
         - outputs to Serial or Terminal or both depending what is defined in settings
 */
-void printTask(String a, String b) {
+void printTask(const String &a, const String &b) {
 #if defined(OUTPUT_SERIAL)
-  Serial.print(a + String("="));
+  Serial.print(a);
+  Serial.print('=');
   Serial.println(b);
 #endif
 #if defined(OUTPUT_TERMINAL)
-  terminal.print(a + String("="));
+  terminal.print(a);
+  terminal.print('=');
   terminal.println(b);
   terminal.flush();
 #endif
+}
+/*
+   addTableRow() - add a row to the table widget with a unique index
+      - the counter is saved on the server (vPIN_ROW_INDEX) so it survives reboots,
+        otherwise new rows would overwrite old ones starting from index 0
+*/
+void addTableRow(const String &name, const String &value) {
+  Blynk.virtualWrite(vPIN_TABLE, "add", rowIndex++, name, value);
+  Blynk.virtualWrite(vPIN_ROW_INDEX, rowIndex);
+}
+/*
+   isTapOn() - true when the valve relay is active
+*/
+inline bool isTapOn() {
+  return digitalRead(TAP) == TAP_ACTIVE;
+}
+/*
+   cancelTimer() - delete a BlynkTimer (frees the slot, unlike disable())
+*/
+void cancelTimer(int &id) {
+  if (id >= 0) {
+    timer.deleteTimer(id);
+    id = -1;
+  }
 }
 /**************************************************************
 
@@ -50,35 +92,61 @@ void printTask(String a, String b) {
  **************************************************************/
 /*
    pulseCounter() -
-      - attached to an interrupt counting the pulses from the sensor then used to calculate the rate
+      - attached to an interrupt counting the pulses from the sensor
+      - must live in IRAM on ESP8266/ESP32, otherwise it crashes ("ISR not in IRAM!")
 */
-void pulseCounter() {
+void IRAM_ATTR pulseCounter() {
+  PULSE_LOCK_ISR();
   pulseCount++;
+  PULSE_UNLOCK_ISR();
 }
 /*
    flowSensor() -
-      - uses interrupt on the sensor pin
-      - calculates the flowRate in mL/s then converts to L/s
-      - update Blynk virtual pins with the data
-      - calculate and compile the water cost based on the price set in settings and usage
-      - calculate and compile the monthly water cost and usage
+      - reads the pulses counted since the last call (atomically)
+      - calculates the flowRate in L/min using the real elapsed time
+      - accumulates the totals and cost
+      - updates Blynk only when something changed (less traffic)
 */
 void flowSensor() {
-  detachInterrupt(FLOW_SENSOR);
-  flowRate = pulseCount / FLOW_CALIBRATION;
+  PULSE_LOCK();
+  uint32_t pulses = pulseCount;
   pulseCount = 0;
-  attachInterrupt(FLOW_SENSOR, pulseCounter, FALLING);
-  //calc totals
-  flowMilliLitres = (flowRate / 60) * 1000;
-  totalMilliLitres += flowMilliLitres;
+  PULSE_UNLOCK();
+
+  unsigned long now = millis();
+  unsigned long elapsed = now - lastFlowCheck;
+  lastFlowCheck = now;
+  if (elapsed == 0) return;
+
+  static bool wasFlowing = true;   // force one update after boot
+  if (pulses == 0) {
+    flowRate = 0;
+    flowMilliLitres = 0;
+    if (wasFlowing) {               // send a single "0" when flow stops
+      Blynk.virtualWrite(vPIN_WATER_FLOW, 0);
+      wasFlowing = false;
+    }
+    return;
+  }
+  wasFlowing = true;
+
+  // pulses/sec / calibration = L/min
+  flowRate = (pulses * 1000.0f / elapsed) / FLOW_CALIBRATION;
+  // mL during this period
+  flowMilliLitres = (flowRate / 60.0f) * elapsed;
+  totalMilliLitres       += flowMilliLitres;
   totalMilliLitres_month += flowMilliLitres;
-  Blynk.virtualWrite(vPIN_WATER_TOTAL, (float)totalMilliLitres / 1000);
-  Blynk.virtualWrite(vPIN_WATER_FLOW,  String((float)flowMilliLitres, 0));
-  Blynk.virtualWrite(vPIN_WATER_TOTAL_MONTH, (float)totalMilliLitres_month / 1000);
-  waterCost = waterCost + ( ( ( (float)flowMilliLitres / 1000 ) * WATER_PRICE ) / 100);
-  Blynk.virtualWrite(vPIN_WATER_COST, String(waterCost, 6));
-  waterCost_month = waterCost_month + ( ( ( (float)flowMilliLitres / 1000 ) * WATER_PRICE ) / 100);
+
+  Blynk.virtualWrite(vPIN_WATER_TOTAL,       totalMilliLitres / 1000.0);
+  Blynk.virtualWrite(vPIN_WATER_FLOW,        String(flowMilliLitres, 0));
+  Blynk.virtualWrite(vPIN_WATER_TOTAL_MONTH, totalMilliLitres_month / 1000.0);
+#ifdef WATER_PRICE
+  double cost = (flowMilliLitres / 1000.0) * WATER_PRICE / 100.0;  // c/L -> $
+  waterCost       += cost;
+  waterCost_month += cost;
+  Blynk.virtualWrite(vPIN_WATER_COST,       String(waterCost, 6));
   Blynk.virtualWrite(vPIN_WATER_COST_MONTH, String(waterCost_month, 6));
+#endif
 }
 /**************************************************************
 
@@ -88,55 +156,61 @@ void flowSensor() {
 /*
   TAP_Off() -
       - only trigger if relay is active
-      - turn off tap relay
-      - dim status led widget to half brightness
-      - after 6sec it goes in to it shuts down
-      - print to terminal the used stats and cost
-      - turn off status led widget
-      - write the usage and cost to the table in two lines
+      - cancel any pending limit timer
+      - turn off tap relay, dim the status led widget
+      - after 6 sec (water drained from sensor) report usage & cost
 */
 void TAP_Off() {
-  if (!digitalRead(TAP)) {
-    digitalWrite(TAP, HIGH);
-    Blynk.virtualWrite(vPIN_TAP_LED, 128);
-    printTask("TAP", "SHUTTING DOWN..");
-    timer.setTimeout(6000, []() {
-      printTask("TAP", "OFF");
-      printTask("USED", String((float)totalMilliLitres / 1000) + String("L  COST=$") + String(waterCost, 3));
-      Blynk.virtualWrite(vPIN_TAP_LED, 0);
-      Blynk.virtualWrite(vPIN_TABLE, "add", rowIndex, curDateTime(), String( (float)totalMilliLitres / 1000, 3) + String(" L"));
-      rowIndex++;
-      Blynk.virtualWrite(vPIN_TABLE, "add", rowIndex, " ", String("$") + String(waterCost, 6));
-      rowIndex++;
-    });
-  }
+  if (!isTapOn()) return;
+  cancelTimer(limitTimer);
+  digitalWrite(TAP, TAP_INACTIVE);
+  Blynk.virtualWrite(vPIN_TAP_LED, 128);
+  Blynk.virtualWrite(vPIN_TAP_ACTIVATE, 0);   // keep the app button in sync
+  printTask("TAP", "SHUTTING DOWN..");
+  cancelTimer(offTimer);
+  offTimer = timer.setTimeout(6000, []() {
+    offTimer = -1;
+    String litres = String(totalMilliLitres / 1000.0, 3);
+    printTask("TAP", "OFF");
+    printTask("USED", litres + "L  COST=$" + String(waterCost, 3));
+    Blynk.virtualWrite(vPIN_TAP_LED, 0);
+    addTableRow(curDateTime(), litres + " L");
+    addTableRow(" ", "$" + String(waterCost, 6));
+  });
 }
 /*
    TAP_On() -
-      - reset 'current' used used and cost
-      - turn on tap relay
-      - turn on led status widget
+      - reset 'current' usage and cost
+      - turn on tap relay & led status widget
       - depending on limit type start a timer to stop the tap
-      - A timed function that checks if the water use limit is reached and shuts down the tap
 */
 void TAP_On() {
+  if (isTapOn()) return;
+  cancelTimer(offTimer);      // previous run's report is superseded
+  cancelTimer(limitTimer);
   totalMilliLitres = 0;
   waterCost = 0;
-  digitalWrite(TAP, LOW);
+  digitalWrite(TAP, TAP_ACTIVE);
   Blynk.virtualWrite(vPIN_TAP_LED, 255);
+  Blynk.virtualWrite(vPIN_TAP_ACTIVATE, 1);
   switch (limitType) {
     case 1:
-      printTask("TAP=ON  LIMIT", String(tap_limit_value / 1000) + String(" SEC"));
-      timer.setTimeout(tap_limit_value, TAP_Off);
+      printTask("TAP=ON  LIMIT", String(tap_limit_value / 1000) + " SEC");
+      if (tap_limit_value > 0)
+        limitTimer = timer.setTimeout(tap_limit_value, []() {
+          limitTimer = -1;
+          TAP_Off();
+        });
       break;
     case 2:
-      printTask("TAP=ON  LIMIT", String(tap_limit_value) + String(" LTRS"));
-      timer1 = timer.setInterval(250, []() {
-        if (tap_limit_value <= (float)totalMilliLitres / 1000) {
-          timer.disable(timer1);
-          TAP_Off();
-        }
-      });
+      printTask("TAP=ON  LIMIT", String(tap_limit_value) + " LTRS");
+      if (tap_limit_value > 0)
+        limitTimer = timer.setInterval(250, []() {
+          if (totalMilliLitres / 1000.0 >= tap_limit_value) TAP_Off();
+        });
+      break;
+    default:
+      printTask("TAP", "ON (NO LIMIT)");
       break;
   }
 }
@@ -145,8 +219,5 @@ void TAP_On() {
       - Toggles the tap state.
 */
 void TAP_Toggle() {
-  digitalRead(TAP) ? TAP_On() : TAP_Off();
+  isTapOn() ? TAP_Off() : TAP_On();
 }
-
-
-

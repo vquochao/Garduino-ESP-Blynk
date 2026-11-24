@@ -5,23 +5,30 @@
  **************************************************************/
 /*
    Auth Codes & Wifi info go in the following file.
-   Create a new folder in your library dir called 'private_credentials_garduino'
-   and create a new file called 'private_credentials_garduino.h' and copy the 
-   example in the repo.
+   Create a new folder in your library dir called 'wifi_credentials'
+   and create a new file called 'wifi_credentials.h' and copy the
+   example in the README. You can also define AUTH there to keep the
+   Blynk token out of this repository.
 */
 #include <wifi_credentials.h>
 /*
-     Blynk Auth Codes
+     Blynk Auth Codes (fallback if not defined in wifi_credentials.h)
 */
+#ifndef AUTH
 #define AUTH                      "0913ee2009cd4fa9b5307e572a0c5028"
+#endif
 /*
    Over The Air Hostname
 */
 #define OTA_HOSTNAME              "GARDUINO-BASE"
 /*
-   Local Server Settings (uncomment to use local server)
+   Local Blynk Server (legacy blynk-server, Blynk library 0.6.1)
+   - LOCAL_PORT: hardware port of the server (8080 = default plain TCP port of blynk-server).
+     Without it the library would use port 80 and fail to connect.
+   - Commenting LOCAL_SERVER out connects to the old blynk-cloud.com, which has been shut down.
 */
 #define LOCAL_SERVER              IPAddress(192, 168, 1, 2)
+#define LOCAL_PORT                8080
 /*
    Console Output (Debug/Log)
 */
@@ -30,11 +37,14 @@
 /*
    Hardware Pins
 */
-#define TAP                       14 // D5
+#define TAP                       14 // GPIO14 (D5 on NodeMCU/WeMos, GPIO14 on ESP32)
+#define TAP_ACTIVE                LOW   // relay level that opens the valve (LOW = active-low relay)
+#define TAP_INACTIVE              (!TAP_ACTIVE)
 /*
    Flow Meter Pin and Calibration factor
+   (YF-S201: pulse frequency [Hz] = 4.5 * flow [L/min])
 */
-#define FLOW_SENSOR               4  // D2
+#define FLOW_SENSOR               4  // GPIO4  (D2 on NodeMCU/WeMos, GPIO4 on ESP32)
 #define FLOW_CALIBRATION          4.5
 /*
    Water Cost. Comment out to disable.
@@ -63,8 +73,5 @@
 #define vPIN_LIMITMENU            V9
 
 #define vPIN_LAST_MONTH           V10
-/*
 
-*/
-
- 
+#define vPIN_ROW_INDEX            V30  // no widget needed: stores the table row counter on the server
